@@ -11,7 +11,6 @@ RewriteEngine On
 RewriteRule ^about-us/?$ /about [R=301,L,NC]
 RewriteRule ^contact-us/?$ /contact [R=301,L,NC]
 RewriteRule ^old-pattu-saree-buyers-in-anna-nagar/?$ / [R=301,L,NC]
-RewriteRule ^old-silk-saree-buyers-in-t-nagar/?$ / [R=301,L,NC]
 RewriteRule ^old-silk-saree-buyers-in-chennai-2/?$ / [R=301,L,NC]
 
 # 1) Redirect requests that still end in .html to the clean URL (301, permanent)
