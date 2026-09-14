@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+Disallow: /blocks
+
+Sitemap: https://omsairampattusaree.com/sitemap.xml
