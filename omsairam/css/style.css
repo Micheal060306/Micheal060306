@@ -388,13 +388,14 @@ p { margin: 0; }
 .form-card > p { font-size: 14px; color: var(--brown-text); margin: 0 0 28px; text-align: center; }
 .booking-form { display: flex; flex-direction: column; gap: 16px; }
 .booking-form label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 700; color: var(--brown-text); }
-.booking-form input {
+.booking-form input, .booking-form textarea {
   padding: 12px 14px;
   border: 1px solid var(--cream-border);
   border-radius: 2px;
   font-size: 15px;
   color: var(--ink);
   font-family: var(--font-sans);
+  resize: vertical;
 }
 .booking-form button { margin-top: 8px; }
 .form-success { text-align: center; padding: 24px 0; }
