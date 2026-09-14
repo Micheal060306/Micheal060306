@@ -545,6 +545,17 @@ p { margin: 0; }
   color: var(--brown-muted);
 }
 .footer-bottom a { color: var(--brown-muted); }
+.footer-social { display: flex; align-items: center; gap: 14px; }
+.footer-social a { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 50%; background: rgba(248,241,228,0.08); color: var(--footer-muted); transition: background 0.2s, color 0.2s; }
+.footer-social a:hover { background: var(--gold); color: var(--footer-bg); }
+.footer-social svg { width: 17px; height: 17px; }
+.footer-credit { color: var(--brown-muted); }
+.footer-credit a { color: var(--gold-light); font-weight: 600; }
+.footer-credit a:hover { text-decoration: underline; }
+@media (max-width: 640px) {
+  .footer-bottom { justify-content: center; text-align: center; }
+  .footer-social { order: -1; }
+}
 
 /* ---------- Blog cards ---------- */
 .blog-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 36px; }
