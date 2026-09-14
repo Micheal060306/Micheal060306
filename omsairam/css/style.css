@@ -622,4 +622,10 @@ p { margin: 0; }
 .article-body ul, .article-body ol { margin: 0 0 18px; padding-left: 22px; }
 .article-body li { margin-bottom: 10px; }
 .article-body strong { color: var(--ink); }
+.article-body h3 { font-size: clamp(19px, 2.2vw, 23px); margin: 32px 0 14px; }
+
+.design-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin: 4px 0 32px; }
+.design-spot { aspect-ratio: 3 / 4; border-radius: 4px; background: linear-gradient(135deg, var(--cream), #EFE0BE); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--gold); text-align: center; padding: 10px; }
+.design-spot span { font-size: 12px; font-weight: 600; color: #8C7A63; }
+@media (max-width: 640px) { .design-grid { grid-template-columns: repeat(2, 1fr); } }
 .bg-demo { border-radius: 2px; padding: 20px; font-size: 13px; }
