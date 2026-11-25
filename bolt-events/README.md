@@ -36,6 +36,11 @@ With `db:dev` running: `npm test` (database and units), then `npm run build` and
 ## How overbooking is prevented
 `book_slot()` locks the slot row, counts active reservations, then inserts. Independently, a trigger maintains `booked_count` and the constraint `slot_not_overbooked` rejects any transaction beyond capacity. Retried submissions reuse an idempotency key and return the same booking.
 
+## Interface
+Desktop-first web layout that still works on phones:
+- Admin and staff: grouped sidebar (collapsible to icons; the choice is kept in the `bolt_sidebar` cookie), a top bar with breadcrumbs, a link to the booking site and the signed-in user, toolbar-style filters, and denser tables with row action menus. Below 900px the sidebar becomes a drawer.
+- Public site: website header and footer, a hero with search on the events page, and a sticky booking panel beside the event details. Below 600px tables turn into cards.
+
 ## Rules worth knowing
 - Staff see bookings assigned to them, plus bookings of their events not assigned to someone else. Rescheduling by staff needs the permission on their profile.
 - A booked slot's time cannot be edited; reschedule its participants first. Capacity cannot go below what is booked.

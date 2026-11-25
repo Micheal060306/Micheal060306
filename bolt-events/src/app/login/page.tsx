@@ -8,8 +8,11 @@ export const metadata = { title: 'Sign in' };
 export default async function Login({ searchParams }: { searchParams: Promise<{ ready?: string }> }) {
   const u = await getUser(); if (u) redirect(`/${u.role}/dashboard`);
   const { ready } = await searchParams;
-  return <main className="auth"><div className="card stack"><Brand /><div><h1>Sign in</h1><p className="muted">For administrators and staff.</p></div>
+  return <main className="auth split"><section className="auth-side" aria-hidden><div className="stack" style={{ gap: 28 }}><span className="brand light"><i><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M13.5 1 4 14h6.5L9.5 23 19 10h-6.5z" /></svg></i><span>Bolt Events</span></span>
+      <h2>Run every event appointment from one place.</h2>
+      <ul><li>Publish events and share booking links</li><li>Slots that can never be overbooked</li><li>Reservations, attendance and staff in one dashboard</li><li>Reports and CSV or Excel exports</li></ul></div><p className="small">Bolt Academy</p></section>
+    <div className="auth-form"><div className="card stack"><Brand /><div><h1>Sign in</h1><p className="muted">For administrators and staff.</p></div>
     {ready && <div className="msg ok">Your password is set. Sign in to continue.</div>}
     <ActionForm action={login} className="stack"><Field l="Email"><input name="email" type="email" autoComplete="username" required /></Field><Field l="Password"><input name="password" type="password" autoComplete="current-password" required /></Field><button className="btn block">Sign in</button></ActionForm>
-    <p className="small muted">Forgotten your password? Ask an administrator for a new sign-in link.</p></div></main>;
+    <p className="small muted">Forgotten your password? Ask an administrator for a new sign-in link.</p></div></div></main>;
 }

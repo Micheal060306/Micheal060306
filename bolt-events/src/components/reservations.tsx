@@ -10,6 +10,10 @@ export function ReservationFilters({ sp, events, staff }: { sp: SP; events: any[
 }
 export function ReservationTable({ rows, total, sp, base }: { rows: any[]; total: number; sp: SP; base: string }) {
   if (!rows.length) return <div className="card"><Empty>No reservations match.</Empty></div>;
-  return <div className="card flush"><div className="tw"><table className="cards"><thead><tr>{['Booking ID', 'Participant', 'Mobile', 'Email', 'Event', 'Event date', 'Time', 'Staff', 'Booking', 'Attendance', 'Booked on'].map((h) => <th key={h}>{h}</th>)}</tr></thead>
-    <tbody>{rows.map((r) => <tr key={r.id}><td data-l="Booking ID" className="b nowrap"><Link href={`${base}/${r.id}`}>{r.reference}</Link></td><td data-l="Participant">{r.participant_name}</td><td data-l="Mobile" className="nowrap">{r.mobile}</td><td data-l="Email">{r.email ?? '–'}</td><td data-l="Event">{r.event_name}</td><td data-l="Event date" className="nowrap">{fmtDate(r.starts_at)}</td><td data-l="Time" className="nowrap">{fmtRange(r.starts_at, r.ends_at)}</td><td data-l="Staff">{r.staff_name ?? 'Unassigned'}</td><td data-l="Booking"><Badge v={r.status} /></td><td data-l="Attendance"><Badge v={r.attendance} /></td><td data-l="Booked on" className="nowrap">{fmtDateTime(r.created_at)}</td></tr>)}</tbody></table></div><Pager sp={sp} total={total} /></div>;
+  return <div className="card flush"><div className="tw"><table className="cards"><thead><tr>{['Booking ID', 'Participant', 'Event', 'Appointment', 'Staff', 'Booking', 'Attendance', 'Booked on'].map((h) => <th key={h}>{h}</th>)}</tr></thead>
+    <tbody>{rows.map((r) => <tr key={r.id}><td data-l="Booking ID" className="b nowrap"><Link href={`${base}/${r.id}`}>{r.reference}</Link></td>
+      <td data-l="Participant"><div className="cell2"><span className="b">{r.participant_name}</span><span className="small muted nowrap">{r.mobile}{r.email && <> · {r.email}</>}</span></div></td>
+      <td data-l="Event">{r.event_name}</td>
+      <td data-l="Appointment" className="nowrap"><div className="cell2"><span>{fmtDate(r.starts_at)}</span><span className="small muted">{fmtRange(r.starts_at, r.ends_at)}</span></div></td>
+      <td data-l="Staff">{r.staff_name ?? <span className="muted">Unassigned</span>}</td><td data-l="Booking"><Badge v={r.status} /></td><td data-l="Attendance"><Badge v={r.attendance} /></td><td data-l="Booked on" className="nowrap small muted">{fmtDateTime(r.created_at)}</td></tr>)}</tbody></table></div><Pager sp={sp} total={total} /></div>;
 }

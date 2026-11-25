@@ -42,8 +42,8 @@ export function BookingFlow({ event, initial }: { event: { slug: string; closed:
     <SlotPicker slots={slots} day={day} onDay={(d) => { setDay(d); setPick(''); setErr(''); }} value={pick} onPick={(id) => { if (id !== pick) idem.current = ''; setPick(id); setErr(''); setTimeout(() => form.current?.scrollIntoView({ block: 'nearest' }), 30); }} />
     {err && <div className="msg err" role="alert">{err}</div>}
     {pick && <form ref={form} onSubmit={submit}><div className="stepn"><i>3</i>Your details</div><fieldset disabled={busy} className="stack" style={{ gap: 14 }}>
-      <label className="f"><span className="req">Full name</span><input name="name" autoComplete="name" required minLength={2} maxLength={100} /></label>
-      <label className="f"><span className="req">Mobile number</span><input name="mobile" type="tel" inputMode="tel" autoComplete="tel" required maxLength={20} placeholder="98765 43210" /></label>
+      <div className="grid g2" style={{ gap: 14 }}><label className="f"><span className="req">Full name</span><input name="name" autoComplete="name" required minLength={2} maxLength={100} /></label>
+      <label className="f"><span className="req">Mobile number</span><input name="mobile" type="tel" inputMode="tel" autoComplete="tel" required maxLength={20} placeholder="98765 43210" /></label></div>
       <label className="f">Email address (optional)<input name="email" type="email" autoComplete="email" maxLength={254} /></label>
       <label className="f">Additional message (optional)<textarea name="message" maxLength={1000} /></label>
       <button className="btn block">{busy ? 'Confirming…' : 'Confirm reservation'}</button></fieldset></form>}</div>;
