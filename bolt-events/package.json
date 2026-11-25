@@ -1,0 +1,40 @@
+{
+  "name": "bolt-events",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "db:dev": "node scripts/db-dev.mjs",
+    "db:migrate": "node scripts/migrate.mjs",
+    "admin:create": "node scripts/create-admin.mjs",
+    "test": "node --test --test-concurrency=1 tests/db/*.test.mjs tests/unit/*.test.mjs",
+    "test:http": "node --test --test-concurrency=1 tests/http/*.test.mjs"
+  },
+  "dependencies": {
+    "@fontsource-variable/plus-jakarta-sans": "^5.3.0",
+    "@types/node": "^26.6.6",
+    "@types/nodemailer": "^8.0.2",
+    "@types/pg": "^8.23.1",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "fflate": "^0.8.3",
+    "lucide-react": "^1.79.0",
+    "next": "^16.4.6",
+    "nodemailer": "^10.6.1",
+    "pg": "^8.23.1",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "typescript": "5.9",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "embedded-postgres": "^17.12.0-beta.19"
+  }
+}
