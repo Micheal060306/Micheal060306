@@ -18,5 +18,5 @@ export function Calendar({ m, rows, base }: { m: ReturnType<typeof monthOf>; row
 }
 export function Schedule({ rows, base, empty }: { rows: any[]; base: string; empty: string }) {
   if (!rows.length) return <Empty>{empty}</Empty>;
-  return <div className="list">{rows.map((r) => <div key={r.id} className="row between"><div className="grow"><Link className="b" href={`${base}/reservations/${r.id}`}>{r.participant_name}</Link><div className="small muted">{r.event_name}{r.staff_name ? `, ${r.staff_name}` : ''}</div></div><span className="small nowrap num">{fmtRange(r.starts_at, r.ends_at)}</span><Badge v={r.attendance} /></div>)}</div>;
+  return <div className="list">{rows.map((r) => <div key={r.id} className="sched-row"><div className="grow"><Link className="b" href={`${base}/reservations/${r.id}`}>{r.participant_name}</Link><div className="small muted">{r.event_name}{r.staff_name ? `, ${r.staff_name}` : ''}</div></div><div className="sched-meta"><span className="small nowrap num">{fmtRange(r.starts_at, r.ends_at)}</span><Badge v={r.attendance} /></div></div>)}</div>;
 }
