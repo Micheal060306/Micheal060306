@@ -1,5 +1,4 @@
 import 'server-only';
-import nodemailer from 'nodemailer';
 import { anon, type Row } from './db';
 import { appUrl } from './auth';
 import { manageToken } from './crypto';
@@ -8,6 +7,9 @@ import { getIntegration, webhookUrlOk } from './integrations';
 import { syncSheet } from './sheet-sync';
 import { syncCalendar } from './calendar-sync';
 import { addToCalendarUrl } from './calendar-link';
+import { syncInvites } from './invite-sync';
+import { buildIcs, inviteSequence, inviteUid } from './ics';
+import { fromAddress, fromName, mailer } from './mail';
 
 class Permanent extends Error {}
 export function variables(n: Row): Record<string, string> {
@@ -30,13 +32,24 @@ async function post(url: string, body: unknown, headers: Record<string, string> 
 }
 
 /** Sends one message. Returns the provider's id only when the provider itself confirms acceptance. */
-async function send(n: Row, c: Record<string, string>): Promise<string> {
+const INVITE_TYPES: Record<string, 'REQUEST' | 'CANCEL'> = { booking_confirmation: 'REQUEST', booking_rescheduling: 'REQUEST', booking_cancellation: 'CANCEL' };
+/** The participant's own calendar invite, attached to booking emails when Calendar invites is set to include participants. */
+function participantInvite(n: Row, c: Record<string, string>, ics?: { enabled: boolean; values: Record<string, string> }) {
+  const method = INVITE_TYPES[n.type];
+  if (!method || !ics?.enabled || ics.values.participants !== 'yes' || !n.idem || !n.starts_at || !n.ends_at) return undefined;
+  const online = !!n.meeting_link && !n.location, minutes = Math.max(0, Math.min(1440, Number(ics.values.reminder_minutes ?? 30) || 0));
+  const content = buildIcs({ uid: inviteUid(n.idem), sequence: inviteSequence(), method, start: n.starts_at, end: n.ends_at, summary: `${n.event_name} (${n.reference})`,
+    description: `Your Bolt Academy booking ${n.reference}.${n.meeting_link ? `\nJoin: ${n.meeting_link}` : ''}`, location: online ? (n.meeting_link || 'Online') : (n.location || ''),
+    organizer: { name: fromName(c.from) || 'Bolt Academy', email: fromAddress(c.from) }, attendees: [{ name: n.participant_name, email: n.recipient }], reminderMinutes: minutes });
+  return { method: method.toLowerCase(), filename: 'invite.ics', content };
+}
+
+async function send(n: Row, c: Record<string, string>, ics?: { enabled: boolean; values: Record<string, string> }): Promise<string> {
   const v = variables(n), body = render(n.body, v);
   const params = n.type === 'staff_assignment' ? [v.staff_name, v.event_name, v.reference, v.date, v.time] : [v.participant_name, v.event_name, v.reference, v.date, v.time];
   switch (n.channel) {
     case 'email': {
-      const t = nodemailer.createTransport({ host: c.host, port: Number(c.port), secure: Number(c.port) === 465, requireTLS: process.env.ALLOW_INSECURE_WEBHOOKS !== '1' && Number(c.port) !== 465, auth: { user: c.user, pass: c.pass }, connectionTimeout: 15_000 });
-      const i = await t.sendMail({ from: c.from, to: n.recipient, subject: render(n.subject, v), text: body });
+      const i = await mailer(c).sendMail({ from: c.from, to: n.recipient, subject: render(n.subject, v), text: body, icalEvent: participantInvite(n, c, ics) });
       if (!i.accepted?.length) throw new Permanent('Mail server did not accept the recipient.');
       return i.messageId ?? 'accepted';
     }
@@ -68,12 +81,13 @@ async function send(n: Row, c: Record<string, string>): Promise<string> {
 export async function dispatch(limit = 25) {
   const jobs = (await anon('select claim_notifications($1) j', [limit])).map((r) => r.j);
   const out = { sent: 0, failed: 0, retry: 0, not_configured: 0 };
+  const ics = jobs.some((n) => n.channel === 'email' && INVITE_TYPES[n.type]) ? await getIntegration('ics') : undefined;
   await Promise.all(jobs.map(async (n) => {
     const finish = (s: string, id: string | null, err: string | null, at: Date | null = null) => anon('select finish_notification($1,$2,$3,$4,$5)', [n.id, s, id, err, at]);
     const cfg = await getIntegration(n.channel);
     if (!cfg.enabled || !cfg.complete) { out.not_configured++; await finish('not_configured', null, 'Integration is not configured.'); return; }
     let id: string;
-    try { id = await send(n, cfg.values); } catch (e: any) {
+    try { id = await send(n, cfg.values, ics); } catch (e: any) {
       if (e instanceof Permanent || n.attempts >= 4) { out.failed++; await finish('failed', null, e.message); } else { out.retry++; await finish('pending', null, e.message, new Date(Date.now() + 2 ** n.attempts * 60_000)); }
       return;
     }
@@ -81,7 +95,8 @@ export async function dispatch(limit = 25) {
   }));
   const sheet = await syncSheet().catch((e) => ({ error: String(e?.message ?? e) }));
   const calendar = await syncCalendar().catch((e) => ({ synced: 0, failed: 0, error: String(e?.message ?? e) }));
-  return { ...out, ...(sheet ? { sheet } : {}), ...(calendar ? { calendar } : {}) };
+  const invites = await syncInvites().catch((e) => ({ sent: 0, failed: 0, error: String(e?.message ?? e) }));
+  return { ...out, ...(sheet ? { sheet } : {}), ...(calendar ? { calendar } : {}), ...(invites ? { invites } : {}) };
 }
 
 /** Sends an invitation by email if SMTP is configured; true only when the mail server accepted it. */

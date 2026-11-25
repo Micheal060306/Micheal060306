@@ -10,6 +10,8 @@ import { parseServiceAccount, parseSpreadsheetId, validSheetName } from '@/lib/g
 import { syncSheet } from '@/lib/sheet-sync';
 import { parseCalendarId } from '@/lib/gcal';
 import { syncCalendar } from '@/lib/calendar-sync';
+import { syncInvites } from '@/lib/invite-sync';
+import { parseEmails } from '@/lib/ics';
 import { istDate } from '@/lib/format';
 import type { Tx } from '@/lib/db';
 import { bool, clean, date, email, int, mobile, optional, password, slugify, text, time, uuid } from '@/lib/validate';
@@ -207,8 +209,18 @@ export async function saveGeneral(_: S, fd: FormData): Promise<S> {
   });
 }
 export async function saveIntegration(_: S, fd: FormData): Promise<S> {
-  return act('admin', z.object({ key: z.enum(['email', 'whatsapp', 'aisensy', 'pabbly', 'gsheet', 'gcal', 'meta']), enabled: bool }), fd, async (q, { key, enabled }) => {
+  return act('admin', z.object({ key: z.enum(['email', 'whatsapp', 'aisensy', 'pabbly', 'gsheet', 'gcal', 'ics', 'meta']), enabled: bool }), fd, async (q, { key, enabled }) => {
     const def = INTEGRATIONS[key], cur = (await getIntegration(key)).values, config: Record<string, string> = {}, secrets: Record<string, string> = {};
+    if (key === 'ics') {
+      const list = parseEmails(String(fd.get('recipients') ?? '')), rem = String(fd.get('reminder_minutes') ?? '').trim() || '30', participants = fd.get('participants') === 'on' ? 'yes' : 'no';
+      if (!list) fail('Enter up to 10 valid email addresses, separated by commas.');
+      if (!/^\d{1,4}$/.test(rem) || Number(rem) > 1440) fail('The reminder must be between 0 and 1440 minutes.');
+      if (enabled && !list!.length && participants === 'no') fail('Add an address to send invites to, or tick "Attach invites to participant emails".');
+      const mail = await getIntegration('email');
+      if (enabled && !(mail.enabled && mail.complete)) fail('Set up and enable Email (SMTP) first: calendar invites are sent by email.');
+      await q('update integration_settings set enabled = $2, config = $3, secrets_encrypted = null where key = $1', [key, enabled, { recipients: list!.join(', '), reminder_minutes: rem, participants }]);
+      return enabled ? (list!.length ? `Saved. New and changed bookings now send invites to ${list!.join(', ')}. Use Send invites for upcoming bookings to add existing ones.` : 'Saved. Participants get an invite with their booking emails.') : 'Integration saved.';
+    }
     if (key === 'gcal') {
       const raw = String(fd.get('calendar_id') ?? '').trim(), keyFile = String(fd.get('service_account') ?? '').trim(), rem = String(fd.get('reminder_minutes') ?? '').trim() || '30';
       const cal = raw ? parseCalendarId(raw) : null;
@@ -268,6 +280,18 @@ export async function syncCalendarNow(_: S, fd: FormData): Promise<S> {
   let synced = 0, failed = 0, error: string | undefined;
   for (let i = 0; i < 20; i++) { const o = await syncCalendar(50); if (!o) break; synced += o.synced; failed += o.failed; error ??= o.error; if (o.failed && !o.synced) break; }
   return failed ? { ok: false, message: `${synced} bookings written, ${failed} failed: ${error}`, at: Date.now() } : { ok: true, message: synced ? `Google Calendar updated: ${synced} upcoming bookings.` : 'No upcoming bookings to add.', at: Date.now() };
+}
+export async function sendInvitesNow(_: S, fd: FormData): Promise<S> {
+  const r = await act('admin', z.object({}), fd, async (q) => {
+    const ics = await getIntegration('ics');
+    if (!ics.enabled) fail('Enable calendar invites first.');
+    if (!ics.values.recipients) fail('Add an address to send invites to.');
+    const [{ n }] = await q("select calendar_sync_all('ics') n"); return String(n);
+  });
+  if (!r?.ok) return r;
+  let sent = 0, failed = 0, error: string | undefined;
+  for (let i = 0; i < 20; i++) { const o = await syncInvites(50); if (!o) break; sent += o.sent; failed += o.failed; error ??= o.error; if (o.failed && !o.sent) break; }
+  return failed ? { ok: false, message: `${sent} invites sent, ${failed} failed: ${error}`, at: Date.now() } : { ok: true, message: sent ? `Sent ${sent} calendar invites for upcoming bookings.` : 'No upcoming bookings to send.', at: Date.now() };
 }
 export async function saveTemplate(_: S, fd: FormData): Promise<S> {
   return act('admin', z.object({ id: uuid, subject: text(0, 200, 'Subject'), body: text(1, 4000, 'Message', true), provider_template: text(0, 200, 'Template name'), is_active: bool }), fd, async (q, v) => {

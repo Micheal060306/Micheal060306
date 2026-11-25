@@ -25,6 +25,7 @@ With `db:dev` running: `npm test` (database and units), then `npm run build` and
 | `db/migrations/005_slot_timing.sql` | Booked slots cannot change time |
 | `db/migrations/006_google_sheets.sql` | Change tracking and sync state for the Google Sheets mirror |
 | `db/migrations/007_google_calendar.sql` | Per-booking queue for the Google Calendar integration |
+| `db/migrations/008_calendar_invites.sql` | Second queue target for calendar invites by email |
 | `scripts/` | Migrate, local database, create administrator |
 | `src/lib/` | Database access, authentication, validation, notifications, reports, exports |
 | `src/components/` | Shared interface components |
@@ -47,7 +48,7 @@ Desktop-first web layout that still works on phones:
 Settings, Integrations, Google Sheets mirrors all reservations into a spreadsheet tab using a Google service account (setup steps in `docs/DEPLOYMENT.md`). Database triggers mark the sheet out of date on any booking, attendance, staff or event-name change; the notification dispatcher (`src/lib/notify.ts`, which runs after each booking and on the scheduler) then rewrites the tab via `src/lib/sheet-sync.ts` and `src/lib/gsheet.ts`. Values are written RAW so nothing becomes a formula. One writer at a time; failures back off for 5 minutes and show on the settings card.
 
 ## Google Calendar
-Settings, Integrations, Google Calendar writes one event per booking to a shared calendar (same service-account sign-in as Sheets, `src/lib/google.ts`). Triggers queue a booking in `calendar_sync` when it is created, rescheduled, cancelled, edited or assigned; the dispatcher writes it via `src/lib/calendar-sync.ts` and `src/lib/gcal.ts` using a fixed event ID derived from the reservation, so retries update rather than duplicate. Participants get an "Add to Google Calendar" button and a `{{calendar_link}}` template variable (`src/lib/calendar-link.ts`).
+Settings, Integrations, Google Calendar writes one event per booking to a shared calendar (same service-account sign-in as Sheets, `src/lib/google.ts`). Triggers queue a booking in `calendar_sync` when it is created, rescheduled, cancelled, edited or assigned; the dispatcher writes it via `src/lib/calendar-sync.ts` and `src/lib/gcal.ts` using a fixed event ID derived from the reservation, so retries update rather than duplicate. Without Google Cloud, Settings, Integrations, Calendar invites by email sends `.ics` invites through the Email integration (`src/lib/ics.ts`, `src/lib/invite-sync.ts`), from the same queue with target `ics`, and can attach the participant's invite to their booking emails. Participants also get an "Add to Google Calendar" button and a `{{calendar_link}}` template variable (`src/lib/calendar-link.ts`).
 
 ## Rules worth knowing
 - Staff see bookings assigned to them, plus bookings of their events not assigned to someone else. Rescheduling by staff needs the permission on their profile.

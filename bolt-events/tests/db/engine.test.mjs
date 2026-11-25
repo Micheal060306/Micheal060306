@@ -355,3 +355,27 @@ test('google calendar queue: only while enabled; bookings, reschedules, cancella
   assert.equal((await app.query('select * from bolt.calendar_sync')).rows.length, 0, 'queue is hidden without an admin session');
   await q(`update bolt.integration_settings set enabled = false where key = 'gcal'`);
 });
+
+test('calendar invites queue: separate from the Google Calendar queue; needs addresses; sync-all skips cancelled', async () => {
+  const claim = async (t) => (await app.query('select bolt.calendar_claim(50, $1) j', [t])).rows.map((r) => r.j);
+  await q(`update bolt.integration_settings set enabled = false where key in ('gcal','ics')`); await q('delete from bolt.calendar_sync');
+  await q(`update bolt.integration_settings set enabled = true, config = '{"participants":"yes"}' where key = 'ics'`);
+  const e = await event(); await book(e.slots[0].id);
+  assert.equal((await q(`select count(*)::int n from bolt.calendar_sync`))[0].n, 0, 'no addresses: nothing to queue');
+  await q(`update bolt.integration_settings set config = '{"recipients":"academy@gmail.com"}' where key = 'ics'`);
+  const b = await book(e.slots[1].id, { name: 'Invite Person' }), id = await rid(b.reference);
+  const jobs = await claim('ics');
+  assert.equal(jobs.length, 1); assert.equal(jobs[0].reference, b.reference); assert.ok(jobs[0].idem, 'includes the key the invite uid is derived from');
+  assert.deepEqual(await claim('gcal'), [], 'Google Calendar is disabled, so its queue stays empty');
+  await app.query(`select bolt.calendar_finish($1,$2,null,'ics')`, [id, jobs[0].changed]);
+  assert.deepEqual(await claim('ics'), []);
+  await q(`update bolt.integration_settings set enabled = true where key = 'gcal'`);
+  await as(admin, 'select bolt.manage_cancel($1,$2)', [id, 'test']);
+  const both = await q('select target from bolt.calendar_sync where reservation_id=$1 and (synced_at is null or changed_at > synced_at) order by target', [id]);
+  assert.deepEqual(both.map((r) => r.target), ['gcal', 'ics'], 'with both enabled, one change queues each target');
+  assert.equal((await claim('ics'))[0].status, 'cancelled');
+  const [{ n }] = await as(admin, `select bolt.calendar_sync_all('ics') n`);
+  assert.ok(n >= 1);
+  assert.equal((await q(`select count(*)::int n from bolt.calendar_sync c join bolt.reservations r on r.id = c.reservation_id where c.target = 'ics' and r.status = 'cancelled' and c.changed_at > now() - interval '1 second' and c.reservation_id <> $1`, [id]))[0].n, 0, 'sync-all does not send invites for cancelled bookings');
+  await q(`update bolt.integration_settings set enabled = false where key in ('gcal','ics')`);
+});

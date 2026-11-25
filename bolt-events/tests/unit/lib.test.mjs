@@ -128,3 +128,25 @@ test('google calendar: calendar id parsing, event shape, create-then-update with
     await assert.rejects(upsertEvent(sa, cal, b, { reminderMinutes: 30 }), (e) => e.permanent && /Share the calendar with bolt@proj/.test(e.message));
   } finally { srv.close(); delete process.env.GOOGLE_TOKEN_URL; delete process.env.GOOGLE_CALENDAR_URL; }
 });
+
+test('calendar invites: valid iCalendar request and cancel, escaping, folding, stable uid, increasing sequence, email lists', async () => {
+  const { buildIcs, inviteUid, inviteSequence, parseEmails } = await import('../../src/lib/ics.ts');
+  const base = { uid: inviteUid('3f2a9c1e-0b7d-4e55-9a10-6c2d8e4f1a2b'), sequence: 5, start: '2026-12-01T04:30:00Z', end: '2026-12-01T05:00:00Z',
+    summary: 'Asha, Career Counselling; Room 2', description: 'Booking ID: BE-TEST1234\nMobile: +919876543210, call first', location: 'Bolt Academy, Villivakkam, Chennai',
+    organizer: { name: 'Bolt Academy', email: 'events@boltacademy.example' }, attendees: [{ email: 'academy@gmail.com' }], reminderMinutes: 30 };
+  const req = buildIcs({ ...base, method: 'REQUEST' });
+  assert.ok(req.endsWith('\r\n') && !/[^\r]\n/.test(req), 'CRLF line endings only');
+  for (const l of ['METHOD:REQUEST', 'DTSTART:20261201T043000Z', 'DTEND:20261201T050000Z', 'SEQUENCE:5', 'STATUS:CONFIRMED', 'TRIGGER:-PT30M', 'ORGANIZER;CN="Bolt Academy":mailto:events@boltacademy.example']) assert.ok(req.includes(l), l);
+  assert.ok(req.replace(/\r\n /g, '').includes('SUMMARY:Asha\\, Career Counselling\; Room 2'), 'text is escaped');
+  assert.ok(req.replace(/\r\n /g, '').includes('DESCRIPTION:Booking ID: BE-TEST1234\\nMobile: +919876543210\\, call first'));
+  assert.ok(req.split('\r\n').every((l) => Buffer.byteLength(l) <= 75), 'long lines are folded to 75 octets');
+  const tamil = buildIcs({ ...base, method: 'REQUEST', summary: 'தமிழ் '.repeat(30) });
+  assert.ok(tamil.split('\r\n').every((l) => Buffer.byteLength(l) <= 75) && !tamil.includes('�'), 'folding never splits a UTF-8 character');
+  const cancel = buildIcs({ ...base, method: 'CANCEL', sequence: 6 });
+  for (const l of ['METHOD:CANCEL', 'STATUS:CANCELLED', 'SEQUENCE:6', `UID:${base.uid}`]) assert.ok(cancel.includes(l), l);
+  assert.ok(!cancel.includes('VALARM'));
+  assert.equal(inviteUid('x'), inviteUid('x')); assert.notEqual(inviteUid('x'), inviteUid('y')); assert.ok(!inviteUid('secret-key').includes('secret'), 'uid does not expose the booking key');
+  assert.ok(inviteSequence(Date.UTC(2027, 0, 1)) > inviteSequence(Date.UTC(2026, 0, 1))); assert.ok(inviteSequence(Date.UTC(2092, 0, 1)) < 2 ** 31);
+  assert.deepEqual(parseEmails('Academy@Gmail.com, staff@example.com; staff@example.com\nx@y.in'), ['academy@gmail.com', 'staff@example.com', 'x@y.in']);
+  assert.deepEqual(parseEmails(''), []); assert.equal(parseEmails('not-an-email'), null);
+});
