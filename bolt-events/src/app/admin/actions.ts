@@ -8,6 +8,8 @@ import { INTEGRATIONS, getIntegration, webhookUrlOk } from '@/lib/integrations';
 import { dispatch, sendInvite } from '@/lib/notify';
 import { parseServiceAccount, parseSpreadsheetId, validSheetName } from '@/lib/gsheet';
 import { syncSheet } from '@/lib/sheet-sync';
+import { parseCalendarId } from '@/lib/gcal';
+import { syncCalendar } from '@/lib/calendar-sync';
 import { istDate } from '@/lib/format';
 import type { Tx } from '@/lib/db';
 import { bool, clean, date, email, int, mobile, optional, password, slugify, text, time, uuid } from '@/lib/validate';
@@ -205,8 +207,22 @@ export async function saveGeneral(_: S, fd: FormData): Promise<S> {
   });
 }
 export async function saveIntegration(_: S, fd: FormData): Promise<S> {
-  return act('admin', z.object({ key: z.enum(['email', 'whatsapp', 'aisensy', 'pabbly', 'gsheet', 'meta']), enabled: bool }), fd, async (q, { key, enabled }) => {
+  return act('admin', z.object({ key: z.enum(['email', 'whatsapp', 'aisensy', 'pabbly', 'gsheet', 'gcal', 'meta']), enabled: bool }), fd, async (q, { key, enabled }) => {
     const def = INTEGRATIONS[key], cur = (await getIntegration(key)).values, config: Record<string, string> = {}, secrets: Record<string, string> = {};
+    if (key === 'gcal') {
+      const raw = String(fd.get('calendar_id') ?? '').trim(), keyFile = String(fd.get('service_account') ?? '').trim(), rem = String(fd.get('reminder_minutes') ?? '').trim() || '30';
+      const cal = raw ? parseCalendarId(raw) : null;
+      if (raw && !cal) fail('Paste the calendar ID from Google Calendar: Settings, your calendar, Integrate calendar. It looks like abc123@group.calendar.google.com.');
+      if (!/^\d{1,4}$/.test(rem) || Number(rem) > 1440) fail('The reminder must be between 0 and 1440 minutes.');
+      const reuse = fd.get('reuse_sheet_key') === 'on' ? await getIntegration('gsheet') : null;
+      if (reuse && !reuse.values.private_key) fail('Google Sheets has no saved key to reuse. Paste the key file instead.');
+      const sa = keyFile ? parseServiceAccount(keyFile) : null;
+      if (keyFile && !sa) fail('That is not a service account key file. In Google Cloud, create a JSON key for the service account and paste the whole file.');
+      const email = sa?.client_email ?? reuse?.values.client_email ?? cur.client_email, pk = sa?.private_key ?? reuse?.values.private_key ?? cur.private_key;
+      if (enabled && (!cal || !email || !pk)) fail('To enable Google Calendar, fill in the calendar ID and a service account key.');
+      await q('update integration_settings set enabled = $2, config = $3, secrets_encrypted = $4 where key = $1', [key, enabled, { ...(cal ? { calendar_id: cal } : {}), reminder_minutes: rem, ...(email ? { client_email: email } : {}) }, pk ? encrypt(JSON.stringify({ private_key: pk })) : null]);
+      return enabled ? `Saved. Share the calendar with ${email} (Make changes to events), then use Sync upcoming bookings.` : 'Integration saved.';
+    }
     if (key === 'gsheet') {
       const raw = String(fd.get('spreadsheet_id') ?? '').trim(), keyFile = String(fd.get('service_account') ?? '').trim(), tab = clean(String(fd.get('sheet_name') ?? '')).trim() || 'Reservations';
       const sid = raw ? parseSpreadsheetId(raw) : null;
@@ -242,6 +258,16 @@ export async function syncSheetNow(_: S, fd: FormData): Promise<S> {
   const out = await syncSheet();
   if (!out) return { ok: false, message: 'A sync is already running. Try again in a minute.', at: Date.now() };
   return 'error' in out ? { ok: false, message: out.error, at: Date.now() } : { ok: true, message: `Google Sheet updated with ${out.synced} reservations.`, at: Date.now() };
+}
+export async function syncCalendarNow(_: S, fd: FormData): Promise<S> {
+  const r = await act('admin', z.object({}), fd, async (q) => {
+    if (!(await getIntegration('gcal')).enabled) fail('Enable Google Calendar first.');
+    const [{ n }] = await q('select calendar_sync_all() n'); return String(n);
+  });
+  if (!r?.ok) return r;
+  let synced = 0, failed = 0, error: string | undefined;
+  for (let i = 0; i < 20; i++) { const o = await syncCalendar(50); if (!o) break; synced += o.synced; failed += o.failed; error ??= o.error; if (o.failed && !o.synced) break; }
+  return failed ? { ok: false, message: `${synced} bookings written, ${failed} failed: ${error}`, at: Date.now() } : { ok: true, message: synced ? `Google Calendar updated: ${synced} upcoming bookings.` : 'No upcoming bookings to add.', at: Date.now() };
 }
 export async function saveTemplate(_: S, fd: FormData): Promise<S> {
   return act('admin', z.object({ id: uuid, subject: text(0, 200, 'Subject'), body: text(1, 4000, 'Message', true), provider_template: text(0, 200, 'Template name'), is_active: bool }), fd, async (q, v) => {

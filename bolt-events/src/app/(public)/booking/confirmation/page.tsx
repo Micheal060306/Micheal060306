@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { CircleCheck } from 'lucide-react';
 import { BookingCard } from '@/components/booking-card';
 import { CopyButton } from '@/components/client-bits';
+import { CalendarButton } from '@/components/calendar-button';
 import { appUrl } from '@/lib/auth';
 import { anon } from '@/lib/db';
 export const metadata = { title: 'Booking confirmation' };
@@ -13,5 +14,5 @@ export default async function Confirmation({ searchParams }: { searchParams: Pro
   return <div className="narrow card stack"><div className="row">{active && <CircleCheck size={34} color="var(--green)" />}<h1>{active ? 'Your appointment is booked' : 'This booking is cancelled'}</h1></div>
     <div className="refbox"><span className="small muted">Booking ID</span><b>{b.reference}</b></div><BookingCard b={b} />
     <p className="small muted">Keep your booking ID. You need it, with your mobile number, to change or cancel. The private link below opens this booking directly.</p>
-    <div className="row"><Link className="btn" href={`/booking/manage?t=${t}`}>Manage booking</Link><CopyButton text={`${appUrl()}/booking/manage?t=${t}`} label="Copy private link" /></div></div>;
+    <div className="row"><CalendarButton b={b} /><Link className="btn ghost" href={`/booking/manage?t=${t}`}>Manage booking</Link><CopyButton text={`${appUrl()}/booking/manage?t=${t}`} label="Copy private link" /></div></div>;
 }

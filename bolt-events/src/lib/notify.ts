@@ -6,6 +6,8 @@ import { manageToken } from './crypto';
 import { fmtLong, fmtRange } from './format';
 import { getIntegration, webhookUrlOk } from './integrations';
 import { syncSheet } from './sheet-sync';
+import { syncCalendar } from './calendar-sync';
+import { addToCalendarUrl } from './calendar-link';
 
 class Permanent extends Error {}
 export function variables(n: Row): Record<string, string> {
@@ -14,6 +16,7 @@ export function variables(n: Row): Record<string, string> {
     date: n.starts_at ? fmtLong(n.starts_at) : '', time: n.starts_at ? fmtRange(n.starts_at, n.ends_at) : '',
     location: n.meeting_link || n.location || '', staff_name: n.staff_name ?? '',
     manage_link: n.idem ? `${appUrl()}/booking/manage?t=${manageToken(n.idem)}` : '', event_link: n.event_slug ? `${appUrl()}/events/${n.event_slug}` : '',
+    calendar_link: n.starts_at && n.ends_at ? addToCalendarUrl({ title: `${n.event_name ?? 'Appointment'} (${n.reference ?? ''})`, start: n.starts_at, end: n.ends_at, location: n.meeting_link || n.location || '' }) : '',
   };
 }
 export const render = (t: string, v: Record<string, string>) => t.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, k) => v[k] ?? '');
@@ -77,7 +80,8 @@ export async function dispatch(limit = 25) {
     out.sent++; await finish('sent', id, null);
   }));
   const sheet = await syncSheet().catch((e) => ({ error: String(e?.message ?? e) }));
-  return { ...out, ...(sheet ? { sheet } : {}) };
+  const calendar = await syncCalendar().catch((e) => ({ synced: 0, failed: 0, error: String(e?.message ?? e) }));
+  return { ...out, ...(sheet ? { sheet } : {}), ...(calendar ? { calendar } : {}) };
 }
 
 /** Sends an invitation by email if SMTP is configured; true only when the mail server accepted it. */

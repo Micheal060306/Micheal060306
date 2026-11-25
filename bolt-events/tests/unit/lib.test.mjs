@@ -77,3 +77,54 @@ test('google sheets client: link parsing, key parsing, signed sign-in, and a ful
     assert.ok(clear > calls.indexOf(put), 'old rows below are cleared after writing, so the sheet is never empty');
   } finally { srv.close(); delete process.env.GOOGLE_TOKEN_URL; delete process.env.GOOGLE_SHEETS_URL; }
 });
+
+test('google calendar: calendar id parsing, event shape, create-then-update with a fixed id, cancel, participant link', async () => {
+  const http = await import('node:http');
+  const { generateKeyPairSync } = await import('node:crypto');
+  const { parseCalendarId, eventId, buildEvent, upsertEvent } = await import('../../src/lib/gcal.ts');
+  const { addToCalendarUrl } = await import('../../src/lib/calendar-link.ts');
+  assert.equal(parseCalendarId('abc123@group.calendar.google.com'), 'abc123@group.calendar.google.com');
+  assert.equal(parseCalendarId('https://calendar.google.com/calendar/embed?src=abc123%40group.calendar.google.com&ctz=Asia%2FKolkata'), 'abc123@group.calendar.google.com');
+  assert.equal(parseCalendarId(`https://calendar.google.com/calendar/u/0?cid=${Buffer.from('team@boltacademy.in').toString('base64')}`), 'team@boltacademy.in');
+  assert.equal(parseCalendarId('not a calendar'), null);
+  const rid = '3f2a9c1e-0b7d-4e55-9a10-6c2d8e4f1a2b';
+  assert.match(eventId(rid), /^[0-9a-v]{5,1024}$/, 'event id uses only Google-allowed characters');
+
+  const b = { id: rid, reference: 'BE-TEST1234', participant_name: 'Asha', mobile: '+919876543210', email: 'asha@example.com', message: 'First visit', status: 'confirmed', event_name: 'Career Counselling', event_type: 'offline', location: 'Bolt Academy, Villivakkam', meeting_link: null, starts_at: '2026-12-01T04:30:00Z', ends_at: '2026-12-01T05:00:00Z', staff_name: 'Kavya' };
+  const ev = buildEvent(b, { reminderMinutes: 30, adminUrl: 'https://x/admin/reservations/1' });
+  assert.equal(ev.summary, 'Asha, Career Counselling (Kavya)'); assert.equal(ev.start.timeZone, 'Asia/Kolkata'); assert.equal(ev.start.dateTime, '2026-12-01T04:30:00.000Z');
+  assert.deepEqual(ev.reminders, { useDefault: false, overrides: [{ method: 'popup', minutes: 30 }] }); assert.match(ev.description, /BE-TEST1234/); assert.match(ev.description, /\+919876543210/);
+  assert.equal(buildEvent({ ...b, status: 'cancelled' }, { reminderMinutes: 0 }).status, 'cancelled');
+
+  const link = new URL(addToCalendarUrl({ title: 'Career Counselling (BE-TEST1234)', start: b.starts_at, end: b.ends_at, location: b.location }));
+  assert.equal(link.hostname, 'calendar.google.com'); assert.equal(link.searchParams.get('dates'), '20261201T043000Z/20261201T050000Z'); assert.equal(link.searchParams.get('ctz'), 'Asia/Kolkata');
+
+  const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048, privateKeyEncoding: { type: 'pkcs8', format: 'pem' }, publicKeyEncoding: { type: 'spki', format: 'pem' } });
+  const sa = { client_email: 'bolt@proj.iam.gserviceaccount.com', private_key: privateKey }, store = new Map(), calls = [];
+  let deny = false;
+  const srv = http.createServer((req, res) => { let body = ''; req.on('data', (d) => (body += d)); req.on('end', () => {
+    const u = new URL(req.url, 'http://x'); calls.push({ method: req.method, path: decodeURIComponent(u.pathname), q: u.search }); res.setHeader('content-type', 'application/json');
+    if (u.pathname === '/token') return res.end('{"access_token":"cal-tok","expires_in":3600}');
+    if (deny) { res.statusCode = 403; return res.end('{"error":{"message":"Forbidden"}}'); }
+    const m = decodeURIComponent(u.pathname).match(/^\/calendar\/v3\/calendars\/([^/]+)\/events(?:\/(.+))?$/);
+    if (!m) { res.statusCode = 400; return res.end('{}'); }
+    if (req.method === 'PUT') { if (!store.has(m[2])) { res.statusCode = 404; return res.end('{"error":{"message":"Not Found"}}'); } store.set(m[2], JSON.parse(body)); return res.end(body); }
+    if (req.method === 'POST') { const j = JSON.parse(body); if (store.has(j.id)) { res.statusCode = 409; return res.end('{}'); } store.set(j.id, j); return res.end(body); }
+    res.statusCode = 405; res.end('{}');
+  }); });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${srv.address().port}`; process.env.GOOGLE_TOKEN_URL = `${base}/token`; process.env.GOOGLE_CALENDAR_URL = base;
+  try {
+    const cal = 'abc123@group.calendar.google.com';
+    assert.equal(await upsertEvent(sa, cal, { ...b, status: 'cancelled' }, { reminderMinutes: 30 }), 'absent', 'a cancelled booking that was never on the calendar creates nothing');
+    assert.equal(store.size, 0);
+    assert.equal(await upsertEvent(sa, cal, b, { reminderMinutes: 30 }), 'created');
+    assert.equal(await upsertEvent(sa, cal, { ...b, starts_at: '2026-12-02T04:30:00Z', ends_at: '2026-12-02T05:00:00Z' }, { reminderMinutes: 30 }), 'updated', 'a retry or reschedule updates the same event');
+    assert.equal(store.size, 1); assert.equal(store.get(eventId(rid)).start.dateTime, '2026-12-02T04:30:00.000Z');
+    assert.equal(await upsertEvent(sa, cal, { ...b, status: 'cancelled' }, { reminderMinutes: 30 }), 'updated'); assert.equal(store.get(eventId(rid)).status, 'cancelled');
+    assert.ok(calls.filter((c) => c.path !== '/token').every((c) => c.q.includes('sendUpdates=none')), 'Google never emails anyone on our behalf');
+    assert.ok(calls.some((c) => c.path === '/token'));
+    deny = true;
+    await assert.rejects(upsertEvent(sa, cal, b, { reminderMinutes: 30 }), (e) => e.permanent && /Share the calendar with bolt@proj/.test(e.message));
+  } finally { srv.close(); delete process.env.GOOGLE_TOKEN_URL; delete process.env.GOOGLE_CALENDAR_URL; }
+});

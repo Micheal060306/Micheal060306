@@ -321,3 +321,37 @@ test('google sheets mirror: changes mark the sheet out of date; one writer at a 
   assert.equal((await as(admin, 'select * from bolt.sheet_sync')).length, 1, 'admins can read sync state');
   await q(`update bolt.integration_settings set enabled = false where key = 'gsheet'`);
 });
+
+test('google calendar queue: only while enabled; bookings, reschedules, cancellations and assignments queue; claim, back-off, sync-all', async () => {
+  const claim = async () => (await app.query('select bolt.calendar_claim(10) j')).rows.map((r) => r.j);
+  await q(`update bolt.integration_settings set enabled = false where key = 'gcal'`); await q('delete from bolt.calendar_sync');
+  const e = await event(), off = await book(e.slots[0].id);
+  assert.equal((await q('select count(*)::int n from bolt.calendar_sync'))[0].n, 0, 'nothing queues while disabled');
+  assert.deepEqual(await claim(), [], 'nothing is handed out while disabled');
+
+  await q(`update bolt.integration_settings set enabled = true where key = 'gcal'`);
+  const b = await book(e.slots[1].id, { name: 'Calendar Person' }), id = await rid(b.reference);
+  let jobs = await claim();
+  assert.equal(jobs.length, 1); assert.equal(jobs[0].id, id); assert.equal(jobs[0].participant_name, 'Calendar Person'); assert.equal(jobs[0].status, 'confirmed'); assert.ok(jobs[0].starts_at && jobs[0].event_name);
+  assert.deepEqual(await claim(), [], 'a claimed booking is not handed to a second writer');
+  await app.query('select bolt.calendar_finish($1,$2,null)', [id, jobs[0].changed]);
+  assert.deepEqual(await claim(), [], 'written bookings are done (microsecond change time survives the round trip)');
+
+  await as(admin, 'select bolt.manage_reschedule($1,$2)', [id, e.slots[2].id]);
+  jobs = await claim(); assert.equal(jobs.length, 1, 'a reschedule queues the booking again'); assert.equal(new Date(jobs[0].starts_at).getTime(), new Date(e.slots[2].starts_at).getTime());
+  await app.query('select bolt.calendar_finish($1,$2,$3)', [id, jobs[0].changed, 'Google Calendar refused access']);
+  const s = (await q('select * from bolt.calendar_sync where reservation_id=$1', [id]))[0];
+  assert.equal(s.attempts, 1); assert.ok(new Date(s.locked_until) > new Date(), 'backs off after an error'); assert.deepEqual(await claim(), []);
+
+  await as(admin, 'select bolt.manage_cancel($1,$2)', [id, 'test']);
+  jobs = await claim(); assert.equal(jobs.length, 1, 'a later change resets the back-off'); assert.equal(jobs[0].status, 'cancelled');
+  await app.query('select bolt.calendar_finish($1,$2,null)', [id, jobs[0].changed]);
+
+  await assert.rejects(app.query('select bolt.calendar_sync_all()'), code('BE403'));
+  const [{ n }] = await as(admin, 'select bolt.calendar_sync_all() n');
+  assert.ok(n >= 2, 'sync-all queues upcoming bookings, including ones made while disabled');
+  const offId = await rid(off.reference), [row] = await q('select * from bolt.calendar_sync where reservation_id=$1', [offId]);
+  assert.ok(row && (row.synced_at === null || row.changed_at > row.synced_at), 'a booking made while disabled is queued by sync-all');
+  assert.equal((await app.query('select * from bolt.calendar_sync')).rows.length, 0, 'queue is hidden without an admin session');
+  await q(`update bolt.integration_settings set enabled = false where key = 'gcal'`);
+});

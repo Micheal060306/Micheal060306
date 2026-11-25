@@ -14,6 +14,8 @@ export const INTEGRATIONS: Record<string, { title: string; blurb: string; fields
     fields: [{ name: 'webhook_url', label: 'Outgoing webhook URL', placeholder: 'https://connect.pabbly.com/…' }, { name: 'inbound_secret', label: 'Incoming secret (X-Bolt-Secret header)', secret: true }] },
   gsheet: { title: 'Google Sheets', blurb: 'Keeps a tab of your spreadsheet in sync with every reservation: new bookings, cancellations, reschedules, attendance and staff changes.', required: ['spreadsheet_id', 'client_email', 'private_key'],
     fields: [{ name: 'spreadsheet_id', label: 'Spreadsheet link or ID', placeholder: 'https://docs.google.com/spreadsheets/d/…' }, { name: 'sheet_name', label: 'Tab name', placeholder: 'Reservations' }, { name: 'service_account', label: 'Service account key (JSON file contents)', secret: true, type: 'textarea' }] },
+  gcal: { title: 'Google Calendar', blurb: 'Adds every booking to a shared academy calendar, so staff get Google Calendar reminders on their phones. Reschedules move the event and cancellations mark it cancelled.', required: ['calendar_id', 'client_email', 'private_key'],
+    fields: [{ name: 'calendar_id', label: 'Calendar ID', placeholder: 'abc123@group.calendar.google.com' }, { name: 'reminder_minutes', label: 'Reminder (minutes before)', placeholder: '30' }, { name: 'service_account', label: 'Service account key (JSON file contents)', secret: true, type: 'textarea' }] },
   meta: { title: 'Meta Lead Ads', blurb: 'Receives lead notifications at /api/webhooks/meta and stores them for future processing.', required: ['verify_token', 'app_secret'],
     fields: [{ name: 'verify_token', label: 'Verify token', secret: true }, { name: 'app_secret', label: 'App secret', secret: true }] },
 };

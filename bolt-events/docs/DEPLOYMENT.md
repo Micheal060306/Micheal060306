@@ -51,6 +51,13 @@ On Supabase, run [supabase-cron.sql](supabase-cron.sql). Vercel Cron also works 
   4. Open the spreadsheet in Google Sheets, click Share and add the service account email shown on the card as **Editor**. Then press **Sync now**.
 
   The tab (default "Reservations") is created if missing and fully rewritten by the app, so keep your own formulas and notes on other tabs. New bookings, cancellations, reschedules, attendance and staff changes sync within seconds; anything missed (for example while Google was unreachable) is retried after 5 minutes by the scheduler in step 4. The server needs outbound HTTPS to `oauth2.googleapis.com` and `sheets.googleapis.com`.
+- **Google Calendar:** puts every booking on a shared academy calendar so staff get Google Calendar reminders (phone and desktop). New bookings appear, reschedules move, cancellations are marked "Cancelled" and staff assignments update the title.
+  1. In the same Google Cloud project as the service account, enable the **Google Calendar API**. You can reuse the Google Sheets key (tick "Use the same service account key as Google Sheets").
+  2. In Google Calendar, create a calendar such as "Bolt Events bookings". In its Settings, under Share with specific people, add the service account email with **Make changes to events**. Add staff there too (See all event details) so they can subscribe.
+  3. Copy the **Calendar ID** from Integrate calendar (or paste the calendar's public/embed link), set the reminder minutes, tick Enabled and save. Press **Sync upcoming bookings** once to add existing bookings.
+
+  Staff get the reminder set on the card (default 30 minutes before) for every event on that calendar; each person can change notification settings for the calendar in their own Google Calendar. Google sends no emails to participants: the integration writes with `sendUpdates=none`. Failed writes retry with back-off (1 minute up to an hour) and show on the card. The server needs outbound HTTPS to `www.googleapis.com`.
+- **Participants' calendars:** the confirmation and manage-booking pages have an **Add to Google Calendar** button, and message templates can include `{{calendar_link}}` (for example in the confirmation email or WhatsApp text).
 - **Meta Lead Ads:** callback `/api/webhooks/meta` with your verify token and app secret. Leads are verified and stored; turning them into bookings is left for a later phase.
 - **Ad links:** add `?utm_source=facebook&utm_medium=paid&utm_campaign={{campaign.name}}&campaign_id={{campaign.id}}&adset_id={{adset.id}}&ad_id={{ad.id}}` to the event link. Attribution is kept in the visitor's browser for 30 days.
 

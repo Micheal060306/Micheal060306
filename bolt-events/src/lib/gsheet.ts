@@ -1,13 +1,11 @@
-// Minimal Google Sheets client: service-account sign-in (RS256 JWT) and a full rewrite of one tab.
-// No dependencies, so it can run in unit tests. Base URLs can be pointed at a mock for tests.
-import { createSign } from 'node:crypto';
+// Minimal Google Sheets client: a full rewrite of one tab. Base URLs can be pointed at a mock for tests.
+import { GoogleError, SCOPES, googleCall, parseServiceAccount, signJwt as sign, type ServiceAccount } from './google.ts';
 
-export type ServiceAccount = { client_email: string; private_key: string };
-const SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
-const tokenUrl = () => process.env.GOOGLE_TOKEN_URL ?? 'https://oauth2.googleapis.com/token';
+export type { ServiceAccount };
+export { parseServiceAccount };
+export const SheetError = GoogleError;
 const apiUrl = () => process.env.GOOGLE_SHEETS_URL ?? 'https://sheets.googleapis.com';
-
-export class SheetError extends Error { permanent: boolean; constructor(message: string, permanent = false) { super(message); this.permanent = permanent; } }
+export const signJwt = (sa: ServiceAccount, now?: number) => sign(sa, SCOPES.sheets, now);
 
 /** Accepts a full spreadsheet URL or a bare ID. */
 export function parseSpreadsheetId(s: string): string | null {
@@ -15,47 +13,14 @@ export function parseSpreadsheetId(s: string): string | null {
   if (m) return m[1];
   return /^[A-Za-z0-9_-]{20,}$/.test(v) ? v : null;
 }
-/** Extracts the two fields we need from a downloaded service-account key file. */
-export function parseServiceAccount(json: string): ServiceAccount | null {
-  try {
-    const j = JSON.parse(json);
-    if (typeof j?.client_email !== 'string' || !/^[^@\s]+@[^@\s]+$/.test(j.client_email)) return null;
-    if (typeof j?.private_key !== 'string' || !j.private_key.includes('PRIVATE KEY')) return null;
-    return { client_email: j.client_email, private_key: j.private_key };
-  } catch { return null; }
-}
 export function validSheetName(s: string) { return s.length >= 1 && s.length <= 90 && !/[\[\]*?:\/\\']/.test(s); }
 
-const b64url = (b: Buffer | string) => Buffer.from(b).toString('base64url');
-export function signJwt(sa: ServiceAccount, now = Math.floor(Date.now() / 1000)) {
-  const head = b64url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
-  const claims = b64url(JSON.stringify({ iss: sa.client_email, scope: SCOPE, aud: 'https://oauth2.googleapis.com/token', iat: now, exp: now + 3600 }));
-  const sig = createSign('RSA-SHA256').update(`${head}.${claims}`).sign(sa.private_key);
-  return `${head}.${claims}.${b64url(sig)}`;
-}
-
-const cache = new Map<string, { token: string; until: number }>();
-async function token(sa: ServiceAccount): Promise<string> {
-  const hit = cache.get(sa.client_email);
-  if (hit && hit.until > Date.now() + 60_000) return hit.token;
-  let jwt: string;
-  try { jwt = signJwt(sa); } catch { throw new SheetError('The service account private key could not be read. Paste the key file again.', true); }
-  const r = await fetch(tokenUrl(), { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion: jwt }), signal: AbortSignal.timeout(15_000), redirect: 'error' });
-  const j: any = await r.json().catch(() => null);
-  if (!r.ok || !j?.access_token) throw new SheetError(`Google sign-in failed: ${j?.error_description ?? j?.error ?? `HTTP ${r.status}`}`, r.status >= 400 && r.status < 500);
-  cache.set(sa.client_email, { token: j.access_token, until: Date.now() + Number(j.expires_in ?? 3600) * 1000 });
-  return j.access_token;
-}
-
 async function call(sa: ServiceAccount, method: string, path: string, body?: unknown) {
-  const r = await fetch(apiUrl() + path, { method, headers: { authorization: `Bearer ${await token(sa)}`, ...(body ? { 'content-type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(30_000), redirect: 'error' });
-  const j: any = await r.json().catch(() => null);
-  if (!r.ok) {
-    const msg = j?.error?.message ?? `HTTP ${r.status}`;
-    if (r.status === 403 || r.status === 404) throw new SheetError(`Google Sheets refused access (${msg}). Share the spreadsheet with ${sa.client_email} as Editor and check the link.`, true);
-    throw new SheetError(`Google Sheets error: ${msg}`, r.status >= 400 && r.status < 500 && r.status !== 429);
+  try { return await googleCall(sa, SCOPES.sheets, apiUrl() + path, method, body); } catch (e) {
+    if (!(e instanceof GoogleError) || !e.status) throw e;
+    if (e.status === 403 || e.status === 404) throw new GoogleError(`Google Sheets refused access (${e.message}). Share the spreadsheet with ${sa.client_email} as Editor and check the link.`, true, e.status);
+    throw new GoogleError(`Google Sheets error: ${e.message}`, e.permanent, e.status);
   }
-  return j;
 }
 
 /** Replaces the whole tab with a header row plus rows. Creates the tab and adds grid rows when needed. Values are written RAW, never as formulas. */
