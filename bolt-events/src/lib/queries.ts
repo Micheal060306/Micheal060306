@@ -52,14 +52,13 @@ export async function getReservation(q: Tx, id: string) {
     where s.event_id = $1 and s.status = 'active' and s.starts_at > now() and s.booked_count < s.capacity and not d.is_blocked and d.booking_enabled and s.id <> $2 order by s.starts_at`, [r.event_id, r.slot_id]);
   return { r, history, slots };
 }
+export const RES_COLUMNS = ['Booking ID', 'Participant Name', 'Mobile Number', 'Email', 'Event Name', 'Event Date', 'Appointment Time', 'Assigned Staff', 'Booking Status', 'Attendance Status', 'Booking Date', 'Message', 'UTM Source', 'UTM Medium', 'UTM Campaign', 'UTM Content', 'UTM Term', 'fbclid', 'Campaign ID', 'Ad Set ID', 'Ad ID', 'Landing Page'];
+/** One reservation as a spreadsheet row, in RES_COLUMNS order (used by exports and the Google Sheets mirror). */
+export const resRow = (r: Record<string, any>) => [r.reference, r.participant_name, r.mobile, r.email, r.event_name, fmtDate(r.starts_at), fmtRange(r.starts_at, r.ends_at), r.staff_name, label(r.status), label(r.attendance), fmtDateTime(r.created_at), r.message, r.utm_source, r.utm_medium, r.utm_campaign, r.utm_content, r.utm_term, r.fbclid, r.campaign_id, r.adset_id, r.ad_id, r.landing_page];
 export async function reservationTable(q: Tx, sp: SP): Promise<Table> {
   const { where, p } = resWhere(sp);
   const rows = await q(`select ${RES_COLS} ${RES_FROM} ${where} order by r.created_at desc limit 50000`, p);
-  return {
-    name: 'Reservations',
-    columns: ['Booking ID', 'Participant Name', 'Mobile Number', 'Email', 'Event Name', 'Event Date', 'Appointment Time', 'Assigned Staff', 'Booking Status', 'Attendance Status', 'Booking Date', 'Message', 'UTM Source', 'UTM Medium', 'UTM Campaign', 'UTM Content', 'UTM Term', 'fbclid', 'Campaign ID', 'Ad Set ID', 'Ad ID', 'Landing Page'],
-    rows: rows.map((r) => [r.reference, r.participant_name, r.mobile, r.email, r.event_name, fmtDate(r.starts_at), fmtRange(r.starts_at, r.ends_at), r.staff_name, label(r.status), label(r.attendance), fmtDateTime(r.created_at), r.message, r.utm_source, r.utm_medium, r.utm_campaign, r.utm_content, r.utm_term, r.fbclid, r.campaign_id, r.adset_id, r.ad_id, r.landing_page]),
-  };
+  return { name: 'Reservations', columns: RES_COLUMNS, rows: rows.map(resRow) };
 }
 
 export async function listEvents(q: Tx, sp: SP) {

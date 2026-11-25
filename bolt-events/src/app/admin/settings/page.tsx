@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { retryNotification, runNotifications, saveGeneral, saveIntegration, saveTemplate } from '@/app/admin/actions';
+import { retryNotification, runNotifications, saveGeneral, saveIntegration, saveTemplate, syncSheetNow } from '@/app/admin/actions';
 import { changePassword } from '@/app/account-actions';
 import { ActionForm } from '@/components/action-form';
 import { Badge, Empty, Field, Head, Pager, qs } from '@/components/ui';
@@ -13,9 +13,21 @@ async function General() {
   const c = await db(async (q) => (await q(`select config from integration_settings where key = 'app'`))[0]?.config ?? {});
   return <div className="card"><ActionForm action={saveGeneral} className="stack"><div className="grid g2"><Field l="Organisation"><input name="organisation" required defaultValue={c.organisation} /></Field><Field l="Support contact"><input name="support_contact" defaultValue={c.support_contact} /></Field><Field l="Appointment reminder (hours before)"><input name="appointment_reminder_hours" type="number" min={1} max={72} required defaultValue={c.appointment_reminder_hours} /></Field><Field l="Event reminder (hours before)"><input name="event_reminder_hours" type="number" min={1} max={336} required defaultValue={c.event_reminder_hours} /></Field></div><div><button className="btn">Save settings</button></div></ActionForm></div>;
 }
+function SheetStatus({ s, st }: { s: { enabled: boolean; values: Record<string, string> }; st: any }) {
+  return <div className="stack-s" style={{ marginBottom: 14 }}>
+    <ol className="small muted" style={{ margin: 0, paddingLeft: 18, display: 'grid', gap: 4 }}>
+      <li>In Google Cloud, enable the Google Sheets API, create a service account and download a JSON key.</li>
+      <li>Paste the key file contents and your spreadsheet link below, then save.</li>
+      <li>Share the spreadsheet with the service account email as <b>Editor</b>.</li></ol>
+    {s.values.client_email && <div className="msg info small">Share the sheet with: <b className="pre">{s.values.client_email}</b></div>}
+    {s.enabled && st && <div className="small">{st.last_error ? <div className="msg err">{st.last_error}</div> : st.synced_at ? <span className="muted">Last synced {fmtDateTime(st.last_run_at)}, {st.row_count} reservations{new Date(st.changed_at) > new Date(st.synced_at) ? '. Changes waiting to sync.' : '.'}</span> : <span className="muted">Not synced yet.</span>}</div>}
+    {s.enabled && <ActionForm action={syncSheetNow} className="row"><button className="btn ghost sm">Sync now</button>{s.values.spreadsheet_id && <a className="small" href={`https://docs.google.com/spreadsheets/d/${encodeURIComponent(s.values.spreadsheet_id)}/edit`} target="_blank" rel="noopener noreferrer">Open spreadsheet</a>}</ActionForm>}</div>;
+}
 async function Integrations() {
   const all = await Promise.all(Object.entries(INTEGRATIONS).map(async ([k, d]) => ({ k, d, s: await getIntegration(k) })));
-  return <><div className="msg info">Nothing is sent until an integration is enabled here. A notification is marked Sent only after the provider accepts it.</div><div className="grid g2">{all.map(({ k, d, s }) => <div className="card" key={k}><div className="row between"><h2>{d.title}</h2>{s.enabled && s.complete ? <Badge v="active" text="Enabled" /> : <Badge v="off" text="Not configured" />}</div><p className="small muted" style={{ margin: '6px 0 14px' }}>{d.blurb}</p><ActionForm action={saveIntegration} hidden={{ key: k }} className="stack-s">{d.fields.map((f) => <Field key={f.name} l={f.label}><input name={f.name} type={f.secret ? 'password' : 'text'} autoComplete="off" placeholder={f.secret && s.values[f.name] ? 'Saved. Leave empty to keep.' : f.placeholder} defaultValue={f.secret ? '' : s.values[f.name] ?? ''} /></Field>)}{(k === 'meta' || k === 'pabbly') && <p className="hint">Incoming webhook: {appUrl()}/api/webhooks/{k}</p>}<label className="check"><input type="checkbox" name="enabled" defaultChecked={s.enabled} />Enabled</label><div><button className="btn sm">Save</button></div></ActionForm></div>)}</div></>;
+  const st = await db(async (q) => (await q('select * from sheet_sync where id = 1'))[0]);
+  const saved = (k: string, f: string, s: { values: Record<string, string> }) => !!(k === 'gsheet' && f === 'service_account' ? s.values.private_key : s.values[f]);
+  return <><div className="msg info">Nothing is sent until an integration is enabled here. A notification is marked Sent only after the provider accepts it.</div><div className="grid g2">{all.map(({ k, d, s }) => <div className="card" key={k}><div className="row between"><h2>{d.title}</h2>{s.enabled && s.complete ? <Badge v="active" text="Enabled" /> : <Badge v="off" text="Not configured" />}</div><p className="small muted" style={{ margin: '6px 0 14px' }}>{d.blurb}</p>{k === 'gsheet' && <SheetStatus s={s} st={st} />}<ActionForm action={saveIntegration} hidden={{ key: k }} className="stack-s">{d.fields.map((f) => <Field key={f.name} l={f.label}>{f.type === 'textarea' ? <textarea name={f.name} rows={4} autoComplete="off" spellCheck={false} placeholder={f.secret && saved(k, f.name, s) ? 'Saved. Leave empty to keep.' : '{ "type": "service_account", … }'} /> : <input name={f.name} type={f.secret ? 'password' : 'text'} autoComplete="off" placeholder={f.secret && saved(k, f.name, s) ? 'Saved. Leave empty to keep.' : f.placeholder} defaultValue={f.secret ? '' : s.values[f.name] ?? ''} />}</Field>)}{(k === 'meta' || k === 'pabbly') && <p className="hint">Incoming webhook: {appUrl()}/api/webhooks/{k}</p>}<label className="check"><input type="checkbox" name="enabled" defaultChecked={s.enabled} />Enabled</label><div><button className="btn sm">Save</button></div></ActionForm></div>)}</div></>;
 }
 async function Templates({ ch }: { ch: string }) {
   const rows = await db((q) => q('select * from notification_templates where channel = $1 order by type', [ch]));

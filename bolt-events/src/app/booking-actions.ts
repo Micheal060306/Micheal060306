@@ -14,7 +14,7 @@ export async function rescheduleReservation(_: S, fd: FormData): Promise<S> {
   return kick(await act('any', z.object({ id: uuid, slot: uuid }), fd, async (q, v) => { await q('select manage_reschedule($1,$2)', [v.id, v.slot]); return 'Reservation rescheduled.'; }));
 }
 export async function markAttendance(_: S, fd: FormData): Promise<S> {
-  return act('any', z.object({ id: uuid, status: z.enum(['not_checked_in', 'checked_in', 'attended', 'no_show']) }), fd, async (q, v) => { await q('select set_attendance($1,$2)', [v.id, v.status]); return 'Attendance updated.'; });
+  return kick(await act('any', z.object({ id: uuid, status: z.enum(['not_checked_in', 'checked_in', 'attended', 'no_show']) }), fd, async (q, v) => { await q('select set_attendance($1,$2)', [v.id, v.status]); return 'Attendance updated.'; }));
 }
 export async function addNote(_: S, fd: FormData): Promise<S> {
   return act('any', z.object({ id: uuid, note: text(1, 2000, 'Note', true) }), fd, async (q, v) => { await q('select add_note($1,$2)', [v.id, v.note]); return 'Note added.'; });

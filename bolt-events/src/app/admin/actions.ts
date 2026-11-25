@@ -6,6 +6,8 @@ import { act, appUrl, db, fail, rateLimit, type ActionState } from '@/lib/auth';
 import { encrypt, hashPassword, newToken, verifyPassword } from '@/lib/crypto';
 import { INTEGRATIONS, getIntegration, webhookUrlOk } from '@/lib/integrations';
 import { dispatch, sendInvite } from '@/lib/notify';
+import { parseServiceAccount, parseSpreadsheetId, validSheetName } from '@/lib/gsheet';
+import { syncSheet } from '@/lib/sheet-sync';
 import { istDate } from '@/lib/format';
 import type { Tx } from '@/lib/db';
 import { bool, clean, date, email, int, mobile, optional, password, slugify, text, time, uuid } from '@/lib/validate';
@@ -203,8 +205,21 @@ export async function saveGeneral(_: S, fd: FormData): Promise<S> {
   });
 }
 export async function saveIntegration(_: S, fd: FormData): Promise<S> {
-  return act('admin', z.object({ key: z.enum(['email', 'whatsapp', 'aisensy', 'pabbly', 'meta']), enabled: bool }), fd, async (q, { key, enabled }) => {
+  return act('admin', z.object({ key: z.enum(['email', 'whatsapp', 'aisensy', 'pabbly', 'gsheet', 'meta']), enabled: bool }), fd, async (q, { key, enabled }) => {
     const def = INTEGRATIONS[key], cur = (await getIntegration(key)).values, config: Record<string, string> = {}, secrets: Record<string, string> = {};
+    if (key === 'gsheet') {
+      const raw = String(fd.get('spreadsheet_id') ?? '').trim(), keyFile = String(fd.get('service_account') ?? '').trim(), tab = clean(String(fd.get('sheet_name') ?? '')).trim() || 'Reservations';
+      const sid = raw ? parseSpreadsheetId(raw) : null;
+      if (raw && !sid) fail('Paste the spreadsheet link from your browser, or its ID.');
+      if (!validSheetName(tab)) fail('The tab name cannot contain [ ] * ? : / \\ or quotes.');
+      const sa = keyFile ? parseServiceAccount(keyFile) : null;
+      if (keyFile && !sa) fail('That is not a service account key file. In Google Cloud, create a JSON key for the service account and paste the whole file.');
+      const email = sa?.client_email ?? cur.client_email, pk = sa?.private_key ?? cur.private_key;
+      if (enabled && (!sid || !email || !pk)) fail('To enable Google Sheets, fill in the spreadsheet link and the service account key.');
+      await q('update integration_settings set enabled = $2, config = $3, secrets_encrypted = $4 where key = $1', [key, enabled, { ...(sid ? { spreadsheet_id: sid } : {}), sheet_name: tab, ...(email ? { client_email: email } : {}) }, pk ? encrypt(JSON.stringify({ private_key: pk })) : null]);
+      await q('select sheet_sync_request()');
+      return enabled ? `Saved. Share the spreadsheet with ${email} as Editor, then use Sync now.` : 'Integration saved.';
+    }
     for (const f of def.fields) {
       const v = clean(String(fd.get(f.name) ?? '')).slice(0, 2000);
       if (f.secret) { if (v || cur[f.name]) secrets[f.name] = v || cur[f.name]; } else if (v) config[f.name] = v;
@@ -216,6 +231,17 @@ export async function saveIntegration(_: S, fd: FormData): Promise<S> {
     await q('update integration_settings set enabled = $2, config = $3, secrets_encrypted = $4 where key = $1', [key, enabled, config, Object.keys(secrets).length ? encrypt(JSON.stringify(secrets)) : null]);
     return 'Integration saved.';
   });
+}
+export async function syncSheetNow(_: S, fd: FormData): Promise<S> {
+  // request in its own transaction first, so the sync (on another connection) sees it
+  const r = await act('admin', z.object({}), fd, async (q) => {
+    if (!(await getIntegration('gsheet')).enabled) fail('Enable Google Sheets first.');
+    await q('select sheet_sync_request()'); return 'ok';
+  });
+  if (!r?.ok) return r;
+  const out = await syncSheet();
+  if (!out) return { ok: false, message: 'A sync is already running. Try again in a minute.', at: Date.now() };
+  return 'error' in out ? { ok: false, message: out.error, at: Date.now() } : { ok: true, message: `Google Sheet updated with ${out.synced} reservations.`, at: Date.now() };
 }
 export async function saveTemplate(_: S, fd: FormData): Promise<S> {
   return act('admin', z.object({ id: uuid, subject: text(0, 200, 'Subject'), body: text(1, 4000, 'Message', true), provider_template: text(0, 200, 'Template name'), is_active: bool }), fd, async (q, v) => {

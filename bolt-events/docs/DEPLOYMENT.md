@@ -44,6 +44,13 @@ On Supabase, run [supabase-cron.sql](supabase-cron.sql). Vercel Cron also works 
 ## 5. Integrations (Admin, Settings, Integrations)
 - **Email:** SMTP details. **WhatsApp:** phone number ID, access token, and approved template names under Templates (five body variables: name, event, booking ID, date, time). **AiSensy:** API key plus campaign names under Templates.
 - **Pabbly out:** your Pabbly webhook URL. **Pabbly in:** POST JSON to `/api/webhooks/pabbly` with header `X-Bolt-Secret`.
+- **Google Sheets:** mirrors every reservation into one tab of a spreadsheet (same columns as the Reservations export).
+  1. In [Google Cloud Console](https://console.cloud.google.com/), create or pick a project and enable the **Google Sheets API**.
+  2. Under IAM and Admin, Service accounts, create a service account (no roles needed), then Keys, Add key, JSON. A `.json` file downloads.
+  3. In Bolt Events, paste the spreadsheet link and the whole contents of that file, tick Enabled and save.
+  4. Open the spreadsheet in Google Sheets, click Share and add the service account email shown on the card as **Editor**. Then press **Sync now**.
+
+  The tab (default "Reservations") is created if missing and fully rewritten by the app, so keep your own formulas and notes on other tabs. New bookings, cancellations, reschedules, attendance and staff changes sync within seconds; anything missed (for example while Google was unreachable) is retried after 5 minutes by the scheduler in step 4. The server needs outbound HTTPS to `oauth2.googleapis.com` and `sheets.googleapis.com`.
 - **Meta Lead Ads:** callback `/api/webhooks/meta` with your verify token and app secret. Leads are verified and stored; turning them into bookings is left for a later phase.
 - **Ad links:** add `?utm_source=facebook&utm_medium=paid&utm_campaign={{campaign.name}}&campaign_id={{campaign.id}}&adset_id={{adset.id}}&ad_id={{ad.id}}` to the event link. Attribution is kept in the visitor's browser for 30 days.
 

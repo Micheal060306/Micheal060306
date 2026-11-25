@@ -23,6 +23,7 @@ With `db:dev` running: `npm test` (database and units), then `npm run build` and
 | `db/migrations/003_booking.sql` | Booking engine, slots, staff operations, notification queue |
 | `db/migrations/004_defaults.sql` | Default templates and integration rows |
 | `db/migrations/005_slot_timing.sql` | Booked slots cannot change time |
+| `db/migrations/006_google_sheets.sql` | Change tracking and sync state for the Google Sheets mirror |
 | `scripts/` | Migrate, local database, create administrator |
 | `src/lib/` | Database access, authentication, validation, notifications, reports, exports |
 | `src/components/` | Shared interface components |
@@ -40,6 +41,9 @@ With `db:dev` running: `npm test` (database and units), then `npm run build` and
 Desktop-first web layout that still works on phones:
 - Admin and staff: grouped sidebar (collapsible to icons; the choice is kept in the `bolt_sidebar` cookie), a top bar with breadcrumbs, a link to the booking site and the signed-in user, toolbar-style filters, and denser tables with row action menus. Below 900px the sidebar becomes a drawer.
 - Public site: website header and footer, a hero with search on the events page, and a sticky booking panel beside the event details. Below 600px tables turn into cards.
+
+## Google Sheets
+Settings, Integrations, Google Sheets mirrors all reservations into a spreadsheet tab using a Google service account (setup steps in `docs/DEPLOYMENT.md`). Database triggers mark the sheet out of date on any booking, attendance, staff or event-name change; the notification dispatcher (`src/lib/notify.ts`, which runs after each booking and on the scheduler) then rewrites the tab via `src/lib/sheet-sync.ts` and `src/lib/gsheet.ts`. Values are written RAW so nothing becomes a formula. One writer at a time; failures back off for 5 minutes and show on the settings card.
 
 ## Rules worth knowing
 - Staff see bookings assigned to them, plus bookings of their events not assigned to someone else. Rescheduling by staff needs the permission on their profile.

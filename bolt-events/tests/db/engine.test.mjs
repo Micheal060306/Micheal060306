@@ -287,3 +287,37 @@ test('events with reservations cannot be deleted', async () => {
   await assert.rejects(as(admin, 'delete from bolt.events where id=$1', [id]), (e) => ['23503', '23001'].includes(e.code));
   const e2 = await event(); await as(admin, 'delete from bolt.events where id=$1', [e2.id]);
 });
+
+test('google sheets mirror: changes mark the sheet out of date; one writer at a time; back-off after errors', async () => {
+  const state = async () => (await q('select * from bolt.sheet_sync'))[0];
+  await q(`update bolt.integration_settings set enabled = false where key = 'gsheet'`);
+  assert.equal((await app.query('select bolt.sheet_sync_claim() t')).rows[0].t, null, 'disabled: nothing to do');
+  assert.equal((await app.query('select count(*)::int n from bolt.sheet_reservations()')).rows[0].n, 0, 'disabled: no data leaves the database');
+  await q(`update bolt.integration_settings set enabled = true where key = 'gsheet'`);
+  await q('update bolt.sheet_sync set synced_at = changed_at, locked_until = null');
+  assert.equal((await app.query('select bolt.sheet_sync_claim() t')).rows[0].t, null, 'up to date');
+
+  const e = await event(), b = await book(e.slots[0].id, { name: 'Sheet Person' });
+  const t = (await app.query('select bolt.sheet_sync_claim() t')).rows[0].t;
+  assert.ok(t, 'a booking makes the sheet out of date');
+  assert.equal((await app.query('select bolt.sheet_sync_claim() t')).rows[0].t, null, 'second writer is refused while the first holds the claim');
+  const rows = (await app.query('select bolt.sheet_reservations() j')).rows.map((r) => r.j);
+  const mine = rows.find((r) => r.reference === b.reference);
+  assert.equal(mine.participant_name, 'Sheet Person'); assert.equal(mine.attendance, 'not_checked_in'); assert.equal(mine.event_name, 'Career Counselling');
+
+  await app.query('select bolt.sheet_sync_finish($1,null,$2)', [t, 'boom']);
+  let s = await state(); assert.equal(s.last_error, 'boom'); assert.ok(new Date(s.locked_until) > new Date(), 'backs off after an error');
+  assert.equal((await app.query('select bolt.sheet_sync_claim() t')).rows[0].t, null, 'no retry during back-off');
+
+  await q('update bolt.sheet_sync set locked_until = null');
+  const t2 = (await app.query('select bolt.sheet_sync_claim() t')).rows[0].t;
+  await app.query('select bolt.sheet_sync_finish($1,$2,null)', [t2, rows.length]);
+  s = await state(); assert.equal(s.last_error, null); assert.equal(s.row_count, rows.length); assert.equal((await app.query('select bolt.sheet_sync_claim() t')).rows[0].t, null);
+
+  await as(admin, `select bolt.set_attendance($1,'attended')`, [await rid(b.reference)]);
+  assert.ok((await app.query('select bolt.sheet_sync_claim() t')).rows[0].t, 'attendance changes mark the sheet out of date');
+  await assert.rejects(app.query('select bolt.sheet_sync_request()'), code('BE403'));
+  assert.equal((await app.query('select * from bolt.sheet_sync')).rows.length, 0, 'sync state is hidden without an admin session');
+  assert.equal((await as(admin, 'select * from bolt.sheet_sync')).length, 1, 'admins can read sync state');
+  await q(`update bolt.integration_settings set enabled = false where key = 'gsheet'`);
+});

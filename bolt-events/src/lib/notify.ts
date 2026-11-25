@@ -5,6 +5,7 @@ import { appUrl } from './auth';
 import { manageToken } from './crypto';
 import { fmtLong, fmtRange } from './format';
 import { getIntegration, webhookUrlOk } from './integrations';
+import { syncSheet } from './sheet-sync';
 
 class Permanent extends Error {}
 export function variables(n: Row): Record<string, string> {
@@ -75,7 +76,8 @@ export async function dispatch(limit = 25) {
     }
     out.sent++; await finish('sent', id, null);
   }));
-  return out;
+  const sheet = await syncSheet().catch((e) => ({ error: String(e?.message ?? e) }));
+  return { ...out, ...(sheet ? { sheet } : {}) };
 }
 
 /** Sends an invitation by email if SMTP is configured; true only when the mail server accepted it. */
