@@ -1,0 +1,16 @@
+import Link from 'next/link';
+import { addNote } from '@/app/booking-actions';
+import { ActionForm } from '@/components/action-form';
+import { AttendanceButtons } from '@/components/attendance-buttons';
+import { ATT, Badge, Empty, Field, Head, Opts, Pager, qs } from '@/components/ui';
+import { db, requireRole } from '@/lib/auth';
+import { fmtDateTime, fmtDayLong, fmtRange, istDate, label } from '@/lib/format';
+import { eventOptions, listReservations, type SP } from '@/lib/queries';
+export const metadata = { title: 'Attendance' };
+export default async function P({ searchParams }: { searchParams: Promise<SP> }) {
+  await requireRole('staff'); const raw = await searchParams, date = raw.date ?? istDate(), sp: SP = { ...raw, date };
+  const d = await db(async (q) => ({ ...(await listReservations(q, sp, 's.starts_at, r.participant_name, r.id')), events: await eventOptions(q), log: await q(`select h.*, r.reference, r.participant_name, p.full_name actor from booking_history h join reservations r on r.id = h.reservation_id left join profiles p on p.id = h.actor_id where h.action = 'attendance' order by h.id desc limit 15`) }));
+  return <><Head title="Attendance" sub={/^\d{4}-\d{2}-\d{2}$/.test(date) && !Number.isNaN(Date.parse(date)) ? fmtDayLong(date) : 'All dates'} /><form className="filters"><label className="f q">Search<input type="search" name="q" defaultValue={sp.q} placeholder="Name, mobile or booking ID" /></label><Field l="Date"><input type="date" name="date" defaultValue={date} /></Field><Field l="Event"><select name="event" defaultValue={sp.event}><Opts any="All events" o={d.events.map((e) => [e.id, e.name])} /></select></Field><Field l="Attendance"><select name="attendance" defaultValue={sp.attendance}><Opts any="All" o={ATT} /></select></Field><button className="btn">Show</button></form>
+    {d.rows.length ? <div className="stack">{d.rows.map((r) => <div className="card stack-s" key={r.id}><div className="row between"><div><Link className="b" href={`/staff/reservations/${r.id}`}>{r.participant_name}</Link><div className="small muted">{r.reference}, {r.mobile}</div></div><div className="right"><div className="b num">{fmtRange(r.starts_at, r.ends_at)}</div><div className="small muted">{r.event_name}</div></div></div>{r.status === 'cancelled' ? <div><Badge v="cancelled" /></div> : <AttendanceButtons id={r.id} current={r.attendance} quiet />}<details><summary>Add a note</summary><ActionForm action={addNote} hidden={{ id: r.id }} className="row" resetOnOk><input className="grow" name="note" required maxLength={2000} aria-label="Internal note" style={{ width: 'auto' }} /><button className="btn ghost sm">Save note</button></ActionForm></details></div>)}<div className="card flush"><Pager sp={sp} total={d.total} /></div></div> : <div className="card"><Empty>No participants found for this date.</Empty></div>}
+    <div className="card"><h2>Attendance history</h2>{d.log.length ? <div className="list">{d.log.map((h) => <div key={h.id} className="row between"><div className="grow"><span className="b">{h.participant_name}</span> <span className="small muted">{h.reference}</span><div className="small muted">{label(h.details.from)} to {label(h.details.to)}</div></div><span className="small muted">{fmtDateTime(h.created_at)}</span></div>)}</div> : <Empty>No attendance recorded yet.</Empty>}</div></>;
+}

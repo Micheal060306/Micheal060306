@@ -1,0 +1,21 @@
+import Link from 'next/link';
+import { Schedule } from '@/components/calendar';
+import { Badge, Empty, Head, HBars, RangeFilter, TrendChart } from '@/components/ui';
+import { db, requireRole } from '@/lib/auth';
+import { fmtDateTime, fmtSpan, fmtDay, label, parseRange } from '@/lib/format';
+import { attendanceReport, dashboard, eventReport, staffReport, trend, type SP } from '@/lib/queries';
+export const metadata = { title: 'Dashboard' };
+export default async function P({ searchParams }: { searchParams: Promise<SP> }) {
+  const u = await requireRole('admin'); const sp = await searchParams, r = parseRange(sp);
+  const d = await db(async (q) => ({ ...(await dashboard(q, r.from, r.to)), trend: await trend(q, r.from, r.to), ev: await eventReport(q, r.from, r.to), att: await attendanceReport(q, r.from, r.to), staff: await staffReport(q, r.from, r.to) }));
+  const { c, sl } = d, when = r.from === r.to ? fmtDay(r.from) : `${fmtDay(r.from)} – ${fmtDay(r.to)}`;
+  const K: [string, number, string][] = [['Total Events', c.total_events, 'All events'], ['Active Events', c.active_events, 'Published, not ended'], ['Total Reservations', c.total_reservations, 'Booked in period'], ["Today's Reservations", c.today_reservations, 'Appointments today'], ['Upcoming Reservations', c.upcoming, 'From now on'], ['Available Slots', sl.available, 'Upcoming, open'], ['Fully Booked Slots', sl.full, 'Upcoming'], ['Cancelled Reservations', c.cancelled, 'Cancelled in period'], ['Checked-In Participants', c.checked_in, 'Appointments in period'], ['No-Show Participants', c.no_show, 'Appointments in period']];
+  const att = ['not_checked_in', 'checked_in', 'attended', 'no_show'].map((k) => ({ label: label(k), n: d.att.find((a) => a.status === k)?.n ?? 0 }));
+  return <><Head title={`Welcome, ${u.full_name.split(' ')[0]}`} sub={`Period: ${when}`}><Link className="btn" href="/admin/events/create">Create event</Link></Head><RangeFilter sp={sp} r={r} />
+    <div className="kpis">{K.map(([t, n, h]) => <div className="kpi" key={t}><span>{t}</span><b>{n}</b><small>{h}</small></div>)}</div>
+    <div className="grid g21"><div className="card"><h2>Booking trend</h2><TrendChart data={d.trend as any} /></div><div className="card"><h2>Today’s schedule</h2><Schedule rows={d.schedule.slice(0, 8)} base="/admin" empty="No appointments today." />{d.schedule.length > 8 && <Link className="small" href="/admin/calendar">See all {d.schedule.length}</Link>}</div></div>
+    <div className="grid g3"><div className="card"><h2>Bookings by event</h2>{d.ev.length ? <HBars data={d.ev.slice(0, 8).map((e) => ({ label: e.name, n: e.total }))} /> : <Empty>No bookings in this period.</Empty>}</div><div className="card"><h2>Slot availability</h2>{d.availability.length ? <><p className="small muted" style={{ marginBottom: 12 }}>Booked places of upcoming capacity</p><HBars of data={d.availability.map((e) => ({ label: e.name, n: e.booked, max: e.capacity }))} /></> : <Empty>No upcoming slots.</Empty>}</div><div className="card"><h2>Attendance</h2><HBars data={att} /></div></div>
+    <div className="grid g3"><div className="card"><h2>Recent reservations</h2>{d.recent.length ? <div className="list">{d.recent.map((x) => <div key={x.id} className="row between"><div className="grow"><Link className="b" href={`/admin/reservations/${x.id}`}>{x.participant_name}</Link><div className="small muted">{x.event_name}, {fmtDateTime(x.created_at)}</div></div><Badge v={x.status} /></div>)}</div> : <Empty>No reservations yet.</Empty>}</div>
+      <div className="card"><h2>Upcoming events</h2>{d.upcomingEvents.length ? <div className="list">{d.upcomingEvents.map((e) => <div key={e.id}><Link className="b" href={`/admin/events/${e.id}`}>{e.name}</Link><div className="small muted">{fmtSpan(e.start_date, e.end_date)}</div></div>)}</div> : <Empty>No upcoming events.</Empty>}</div>
+      <div className="card"><h2>Staff performance</h2>{d.staff.length ? <div className="list">{d.staff.slice(0, 6).map((s) => <div key={s.id} className="row between"><Link className="b" href={`/admin/staff/${s.id}`}>{s.name}</Link><span className="small muted num">{s.attended} attended of {s.assigned}</span></div>)}</div> : <Empty>No staff yet.</Empty>}</div></div></>;
+}

@@ -1,0 +1,8 @@
+'use client';
+import { fmtDayLong, fmtMonth, fmtRange, fmtWeekday } from '@/lib/format';
+export type Slot = { id: string; date: string; starts_at: string; ends_at: string; capacity: number; remaining: number };
+export function SlotPicker({ slots, day, onDay, value, onPick, exclude }: { slots: Slot[]; day: string; onDay: (d: string) => void; value: string; onPick: (id: string) => void; exclude?: string }) {
+  const days = [...new Set(slots.map((s) => s.date))], list = slots.filter((s) => s.date === day);
+  return <div className="stack"><div><div className="stepn"><i>1</i>Choose a date</div><div className="days" role="group" aria-label="Available dates">{days.map((d) => { const open = slots.some((s) => s.date === d && s.remaining > 0); return <button type="button" key={d} className={`day${d === day ? ' on' : ''}`} aria-pressed={d === day} aria-label={fmtDayLong(d)} onClick={() => onDay(d)}><span>{fmtWeekday(d)}</span><b>{Number(d.slice(8))}</b><span>{open ? fmtMonth(d).slice(0, 3) : 'Full'}</span></button>; })}</div></div>
+    {day && <div><div className="stepn"><i>2</i>Choose a time</div><p className="small muted" style={{ margin: '-4px 0 10px' }}>{fmtDayLong(day)}</p><div className="slots">{list.map((s) => { const mine = s.id === exclude; return <button type="button" key={s.id} className={`slot${s.id === value ? ' on' : ''}`} aria-pressed={s.id === value} disabled={s.remaining < 1 || mine} onClick={() => onPick(s.id)}>{fmtRange(s.starts_at, s.ends_at)}<small>{mine ? 'Your current time' : s.remaining < 1 ? 'Fully booked' : `${s.remaining} of ${s.capacity} left`}</small></button>; })}</div></div>}</div>;
+}
