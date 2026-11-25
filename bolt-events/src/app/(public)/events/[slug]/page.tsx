@@ -13,7 +13,7 @@ export async function generateMetadata({ params }: P) {
 export default async function Event({ params }: P) {
   const e = await load((await params).slug); if (!e) notFound();
   return <div className="book"><div className="stack book-info">
-    {e.banner_version > 0 ? <img className="ban hero" src={`/api/banners/${e.id}?v=${e.banner_version}`} alt="" /> : <div className="ban hero"><CalendarDays size={56} /></div>}
+    {e.banner_version > 0 ? <img className="ban hero" src={`/api/banners/${e.id}?v=${e.banner_version}`} alt="" /> : <div className="ban hero dots"><CalendarDays size={60} /></div>}
     <h1>{e.name}</h1>
     <div className="stack-s"><div className="meta"><CalendarDays size={17} />{fmtSpan(e.start_date, e.end_date)}</div>
       <div className="meta">{e.event_type === 'online' ? <Video size={17} /> : <MapPin size={17} />}<span>{e.event_type === 'online' ? 'Online. You receive the joining link after booking.' : `Offline${e.location ? `, ${e.location}` : ''}`}</span></div>

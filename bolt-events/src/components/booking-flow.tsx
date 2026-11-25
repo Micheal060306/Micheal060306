@@ -1,6 +1,8 @@
 'use client';
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
+import { CalendarCheck } from 'lucide-react';
+import { fmtDayLong, fmtRange } from '@/lib/format';
 import { readAttribution } from './attribution';
 import { SlotPicker, type Slot } from './slot-picker';
 
@@ -41,7 +43,7 @@ export function BookingFlow({ event, initial }: { event: { slug: string; closed:
   return <div className="card stack"><h2>Reserve your appointment</h2>
     <SlotPicker slots={slots} day={day} onDay={(d) => { setDay(d); setPick(''); setErr(''); }} value={pick} onPick={(id) => { if (id !== pick) idem.current = ''; setPick(id); setErr(''); setTimeout(() => form.current?.scrollIntoView({ block: 'nearest' }), 30); }} />
     {err && <div className="msg err" role="alert">{err}</div>}
-    {pick && <form ref={form} onSubmit={submit}><div className="stepn"><i>3</i>Your details</div><fieldset disabled={busy} className="stack" style={{ gap: 14 }}>
+    {pick && <form ref={form} onSubmit={submit} className="stack" style={{ gap: 14 }}>{(() => { const s = slots.find((x) => x.id === pick); return s && <div className="picked" aria-live="polite"><CalendarCheck size={18} /><b>{fmtDayLong(s.date)}</b><span>{fmtRange(s.starts_at, s.ends_at)} IST</span><button type="button" onClick={() => { setPick(''); idem.current = ''; }}>Change</button></div>; })()}<div className="stepn" style={{ marginBottom: 0 }}><i>3</i>Your details</div><fieldset disabled={busy} className="stack" style={{ gap: 14 }}>
       <div className="grid g2" style={{ gap: 14 }}><label className="f"><span className="req">Full name</span><input name="name" autoComplete="name" required minLength={2} maxLength={100} /></label>
       <label className="f"><span className="req">Mobile number</span><input name="mobile" type="tel" inputMode="tel" autoComplete="tel" required maxLength={20} placeholder="98765 43210" /></label></div>
       <label className="f">Email address (optional)<input name="email" type="email" autoComplete="email" maxLength={254} /></label>

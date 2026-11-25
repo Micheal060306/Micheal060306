@@ -1,4 +1,5 @@
 import Link from 'next/link';
-export function Brand({ href = '/events' }: { href?: string }) {
-  return <Link className="brand" href={href}><i><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden><path d="M13.5 1 4 14h6.5L9.5 23 19 10h-6.5z" /></svg></i><span>Bolt <em>Events</em></span></Link>;
+/** Bolt Academy logo plus an "Events" tag. Use onLight on white surfaces (dark-ink version of the logo). */
+export function Brand({ href = '/events', onLight = false }: { href?: string; onLight?: boolean }) {
+  return <Link className={`brand${onLight ? ' on-light' : ''}`} href={href} aria-label="Bolt Academy Events, home"><img src={onLight ? '/bolt-logo-dark.png' : '/bolt-logo.png'} alt="Bolt Academy" width={68} height={38} /><span className="brand-tag">Events</span></Link>;
 }
